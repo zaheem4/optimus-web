@@ -38,7 +38,7 @@ That's it — no server to run or pay for.
 - No shared database — everything is per-browser (`localStorage`). Clearing
   browser data or switching devices loses your history. Use **Settings →
   Export data** to back it up as a `.json` file.
-- Your API key is sent to Google (`generativelanguage.googleapis.com`) for chat, image generation, and voice transcription, straight from your browser. In this build it is kept in `sessionStorage` (cleared when the browser session ends), but while the session is open it is still visible to anyone with access to that browser profile.
+- Your API key is sent to Google (`generativelanguage.googleapis.com`) for chat, image generation, and voice transcription, straight from your browser. In this build it is kept in in-memory state by default (cleared on refresh/close unless you inject a runtime key).
 - Unsupported providers are rejected at runtime in this static build. Keep `provider=gemini` unless you add your own provider adapter.
 - PDF and DOCX text extraction happens in-browser (via pdf.js and
   mammoth.js, loaded from cdnjs on first use) instead of on a Python server.
