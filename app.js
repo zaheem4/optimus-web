@@ -1,6 +1,7 @@
 /* OPTIMUS — static, client-only build.
    No backend. Everything (chat history, memory, projects, files) lives in
-   this browser's localStorage. Your API key never leaves the browser except
+   this browser's storage. Your API key is kept in sessionStorage (not persisted
+   across browser restarts) and never leaves the browser except
    to call Google's Gemini endpoint directly. Good for GitHub Pages / any
    static host. For multi-device sync or a shared database, use the
    FastAPI backend version instead. */
@@ -24,7 +25,7 @@ let imageRetryPrompt = "";
 const state = {
   provider: localStorage.getItem("optimus_provider") || RUNTIME_CONFIG.provider || "gemini",
   apiBase: localStorage.getItem("optimus_api_base") || RUNTIME_CONFIG.apiBase || GEMINI_URL,
-  apiKey: localStorage.getItem("optimus_api_key") || RUNTIME_CONFIG.apiKey || "",
+  apiKey: sessionStorage.getItem("optimus_api_key") || RUNTIME_CONFIG.apiKey || "",
   model: localStorage.getItem("optimus_model") || RUNTIME_CONFIG.model || DEFAULT_MODEL,
   preferences: load("optimus_preferences", {
     customInstruction: "",
@@ -62,7 +63,7 @@ function saveSettings() {
   };
   localStorage.setItem("optimus_provider", state.provider);
   localStorage.setItem("optimus_api_base", state.apiBase);
-  localStorage.setItem("optimus_api_key", state.apiKey);
+  sessionStorage.setItem("optimus_api_key", state.apiKey);
   localStorage.setItem("optimus_model", state.model);
   save("optimus_preferences", state.preferences);
   document.getElementById("modelPill").textContent = "● " + state.model;
@@ -70,7 +71,7 @@ function saveSettings() {
 }
 function clearKey() {
   state.apiKey = "";
-  localStorage.removeItem("optimus_api_key");
+  sessionStorage.removeItem("optimus_api_key");
   document.getElementById("apiKey").value = "";
   notify("API key cleared");
 }
@@ -644,7 +645,7 @@ async function exportAssistantMessage(idx, format) {
 }
 
 function settings() {
-  view.innerHTML = `<div class="settings"><div class="sectionTitle"><h2>Settings</h2><p>Connect and customize OPTIMUS.</p></div><div class="card"><label class="label">Provider</label><input class="input" id="provider" value="${esc(state.provider)}" placeholder="gemini"><label class="label">API Base URL</label><input class="input" id="apiBase" value="${esc(state.apiBase)}" placeholder="${GEMINI_URL}"><label class="label">Gemini API Key</label><input class="input" id="apiKey" type="password" value="${esc(state.apiKey)}" placeholder="Paste your key here"><label class="label">Model</label><input class="input" id="model" value="${esc(state.model)}" placeholder="${DEFAULT_MODEL}"><label class="label">Custom instruction</label><textarea class="textarea" id="customInstruction" placeholder="Optional instructions to apply to every answer">${esc(state.preferences.customInstruction)}</textarea><label class="label">Tone</label><select class="input" id="tone"><option value="balanced"${state.preferences.tone === "balanced" ? " selected" : ""}>Balanced</option><option value="friendly"${state.preferences.tone === "friendly" ? " selected" : ""}>Friendly</option><option value="formal"${state.preferences.tone === "formal" ? " selected" : ""}>Formal</option><option value="direct"${state.preferences.tone === "direct" ? " selected" : ""}>Direct</option></select><label class="label">Response length</label><select class="input" id="responseLength"><option value="short"${state.preferences.responseLength === "short" ? " selected" : ""}>Short</option><option value="medium"${state.preferences.responseLength === "medium" ? " selected" : ""}>Medium</option><option value="long"${state.preferences.responseLength === "long" ? " selected" : ""}>Long</option></select><label class="label">Task mode</label><select class="input" id="taskMode"><option value="general"${state.preferences.taskMode === "general" ? " selected" : ""}>General</option><option value="coding"${state.preferences.taskMode === "coding" ? " selected" : ""}>Coding</option><option value="research"${state.preferences.taskMode === "research" ? " selected" : ""}>Research</option></select><div style="height:12px"></div><button class="action" onclick="saveSettings()">Save on this device</button> <button class="action" onclick="clearKey()">Clear key</button></div><div class="notice" style="margin-top:12px">This is a fully client-side build: your key lives only in this browser's localStorage and is sent only to your configured provider endpoint. Anyone with access to this browser profile can read the key — don't use this on a shared computer.</div><div class="card" style="margin-top:12px"><b>System</b><p>Static site · No backend · Data stored in this browser's localStorage · Direct REST calls for chat/image/voice · Computer control disabled.</p></div><div class="card" style="margin-top:12px"><b>Export / Reset</b><p>Your conversations, memory, projects and files live only in this browser.</p><button class="action" onclick="exportData()">Export data (.json)</button> <button class="action danger" onclick="resetData()">Erase all local data</button></div></div>`;
+  view.innerHTML = `<div class="settings"><div class="sectionTitle"><h2>Settings</h2><p>Connect and customize OPTIMUS.</p></div><div class="card"><label class="label">Provider</label><input class="input" id="provider" value="${esc(state.provider)}" placeholder="gemini"><label class="label">API Base URL</label><input class="input" id="apiBase" value="${esc(state.apiBase)}" placeholder="${GEMINI_URL}"><label class="label">Gemini API Key (session only)</label><input class="input" id="apiKey" type="password" value="${esc(state.apiKey)}" placeholder="Paste your key here"><label class="label">Model</label><input class="input" id="model" value="${esc(state.model)}" placeholder="${DEFAULT_MODEL}"><label class="label">Custom instruction</label><textarea class="textarea" id="customInstruction" placeholder="Optional instructions to apply to every answer">${esc(state.preferences.customInstruction)}</textarea><label class="label">Tone</label><select class="input" id="tone"><option value="balanced"${state.preferences.tone === "balanced" ? " selected" : ""}>Balanced</option><option value="friendly"${state.preferences.tone === "friendly" ? " selected" : ""}>Friendly</option><option value="formal"${state.preferences.tone === "formal" ? " selected" : ""}>Formal</option><option value="direct"${state.preferences.tone === "direct" ? " selected" : ""}>Direct</option></select><label class="label">Response length</label><select class="input" id="responseLength"><option value="short"${state.preferences.responseLength === "short" ? " selected" : ""}>Short</option><option value="medium"${state.preferences.responseLength === "medium" ? " selected" : ""}>Medium</option><option value="long"${state.preferences.responseLength === "long" ? " selected" : ""}>Long</option></select><label class="label">Task mode</label><select class="input" id="taskMode"><option value="general"${state.preferences.taskMode === "general" ? " selected" : ""}>General</option><option value="coding"${state.preferences.taskMode === "coding" ? " selected" : ""}>Coding</option><option value="research"${state.preferences.taskMode === "research" ? " selected" : ""}>Research</option></select><div style="height:12px"></div><button class="action" onclick="saveSettings()">Save on this device</button> <button class="action" onclick="clearKey()">Clear key</button></div><div class="notice" style="margin-top:12px">This is a fully client-side build: your API key is kept in this tab's sessionStorage and sent only to your configured provider endpoint. It is cleared when the browser session ends.</div><div class="card" style="margin-top:12px"><b>System</b><p>Static site · No backend · Data stored in this browser's localStorage · Direct REST calls for chat/image/voice · Computer control disabled.</p></div><div class="card" style="margin-top:12px"><b>Export / Reset</b><p>Your conversations, memory, projects and files live only in this browser.</p><button class="action" onclick="exportData()">Export data (.json)</button> <button class="action danger" onclick="resetData()">Erase all local data</button></div></div>`;
 }
 function exportData() {
   const blob = new Blob([JSON.stringify({ conversations, memories, projects, files, images }, null, 2)], { type: "application/json" });
