@@ -25,9 +25,11 @@ That's it — no server to run or pay for.
 
 - **Chat** with Gemini, using your browser-stored key.
 - **Voice input** — tap the mic, speak, and your words are transcribed by Gemini and dropped into the chat box for you to review before sending. Works the same way on Android, iPhone and desktop, since transcription happens via the Gemini API rather than each browser's own (inconsistent) speech engine.
+- **Voice output (optional)** — read assistant replies aloud with browser speech synthesis.
 - **Image generation** — describe an image and it's generated with Gemini's image model (`gemini-3.1-flash-image`), shown in a gallery, downloadable as PNG.
-- **File upload with in-browser text extraction** for TXT, Markdown, CSV, JSON, PDF (via pdf.js) and DOCX (via mammoth.js) — and you can **view and edit** the extracted text before OPTIMUS uses it as context.
+- **File upload with in-browser extraction** for TXT, Markdown, CSV, JSON, PDF (via pdf.js), DOCX (via mammoth.js), and image attachments (PNG/JPG/WEBP/GIF).
 - **Chat attachment workflow** — attach files directly in Chat, see file name/type/size and processing state, remove/clear attachments, and send only the selected chat attachments as context.
+- **Location/time/weather context** — one-tap browser location + Open-Meteo weather refresh so local time/weather questions can be answered with current context.
 - **Assistant export** — export any assistant answer as a downloadable **PDF** (via jsPDF) or **Word-compatible `.doc`** file.
 - **Answer customization controls** — persist provider/model base URL, custom instruction, tone, response length, and task mode in local storage.
 - **Memory, Projects, Agents plan, Research** (Gemini search grounding), same as before.
@@ -40,6 +42,7 @@ That's it — no server to run or pay for.
   Export data** to back it up as a `.json` file.
 - Your API key is sent to Google (`generativelanguage.googleapis.com`) for chat, image generation, and voice transcription, straight from your browser. In this build it is kept in in-memory state by default (cleared on refresh/close unless you inject a runtime key).
 - Unsupported providers are rejected at runtime in this static build. Keep `provider=gemini` unless you add your own provider adapter.
+- Location/weather context uses browser geolocation (HTTPS required) and Open-Meteo public APIs.
 - PDF and DOCX text extraction happens in-browser (via pdf.js and
   mammoth.js, loaded from cdnjs on first use) instead of on a Python server.
 - Voice input records audio locally and sends it to Gemini once for transcription — it is not continuously streamed anywhere, and nothing is recorded until you tap the mic.

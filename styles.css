@@ -40,3 +40,5 @@ html,body{height:100%}
 .attachmentChip span{font-size:12px;color:var(--muted)}
 .bubbleActions{display:flex;gap:8px;margin-top:10px}
 .action.small{padding:6px 10px;font-size:12px}
+.fileThumb{display:block;max-width:220px;max-height:220px;border:1px solid var(--line);border-radius:10px;margin:8px 0}
+.checkRow{display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--soft);font-size:13px}
