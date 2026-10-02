@@ -54,11 +54,20 @@ let images = load("optimus_images", []);                // [{id,prompt,dataUrl,m
 function nextId(arr) { return arr.length ? Math.max(...arr.map(x => x.id)) + 1 : 1; }
 function notify(t) { toast.textContent = t; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 2200); }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function sanitizeApiKey(raw) {
+  let key = String(raw ?? "").trim();
+  key = key.replace(/^['"]|['"]$/g, "");
+  key = key.replace(/^bearer\s+/i, "");
+  return key.trim();
+}
+function getGeminiHeaders() {
+  return { "x-goog-api-key": sanitizeApiKey(state.apiKey), "Content-Type": "application/json" };
+}
 
 function saveSettings() {
   state.provider = document.getElementById("provider").value.trim().toLowerCase() || "gemini";
   state.apiBase = document.getElementById("apiBase").value.trim() || GEMINI_URL;
-  state.apiKey = document.getElementById("apiKey").value.trim();
+  state.apiKey = sanitizeApiKey(document.getElementById("apiKey").value);
   state.model = document.getElementById("model").value.trim() || DEFAULT_MODEL;
   state.preferences = {
     customInstruction: document.getElementById("customInstruction").value.trim(),
@@ -72,6 +81,7 @@ function saveSettings() {
   localStorage.setItem("optimus_model", state.model);
   save("optimus_preferences", state.preferences);
   document.getElementById("modelPill").textContent = "● " + state.model;
+  document.getElementById("apiKey").value = state.apiKey;
   notify("Settings saved");
 }
 function clearKey() {
@@ -79,7 +89,11 @@ function clearKey() {
   document.getElementById("apiKey").value = "";
   notify("API key cleared");
 }
-function needKey() { if (!state.apiKey) { page("settings"); notify("Add your API key first"); return false; } return true; }
+function needKey() {
+  state.apiKey = sanitizeApiKey(state.apiKey);
+  if (!state.apiKey) { page("settings"); notify("Add your Gemini API key first"); return false; }
+  return true;
+}
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
@@ -127,6 +141,9 @@ function toUserFacingChatError(error) {
   const status = Number(error?.status || 0);
   const msg = String(error?.message || "");
   const low = msg.toLowerCase();
+  if (status === 401 || low.includes("invalid authentication credentials") || low.includes("unauthenticated")) {
+    return "Invalid authentication credentials. Open Settings, paste a valid Gemini API key (not OAuth token/cookie), then try again.";
+  }
   if (status === 403 || low.includes("denied access") || low.includes("permission")) {
     return "Access denied for this API key/project. Open Settings and use a permitted Gemini API key or model.";
   }
@@ -138,7 +155,7 @@ function toUserFacingChatError(error) {
 async function geminiGenerateContent(model, payload, signal) {
   const r = await fetch(`${state.apiBase}/${model}:generateContent`, {
     method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    headers: getGeminiHeaders(),
     body: JSON.stringify(payload),
     signal,
   });
@@ -262,7 +279,7 @@ async function geminiSearch(query) {
   const payload = { contents: [{ role: "user", parts: [{ text: query }] }], tools: [{ google_search: {} }] };
   const r = await fetch(`${state.apiBase}/${state.model}:generateContent`, {
     method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    headers: getGeminiHeaders(),
     body: JSON.stringify(payload),
   });
   let data;
@@ -278,7 +295,7 @@ async function geminiGenerateImage(prompt) {
   };
   const r = await fetch(`${state.apiBase}/${IMAGE_MODEL}:generateContent`, {
     method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    headers: getGeminiHeaders(),
     body: JSON.stringify(payload),
   });
   let data;
@@ -300,7 +317,7 @@ async function geminiTranscribeAudio(base64, mime) {
   };
   const r = await fetch(`${state.apiBase}/${state.model}:generateContent`, {
     method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    headers: getGeminiHeaders(),
     body: JSON.stringify(payload),
   });
   let data;
