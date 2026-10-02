@@ -9,25 +9,27 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
 </head>
 <body>
-<div class="orb orb-a"></div><div class="orb orb-b"></div><div id="toast"></div>
+<div class="orb orb-a" aria-hidden="true"></div><div class="orb orb-b" aria-hidden="true"></div><div id="toast" role="status" aria-live="polite"></div>
 <div class="app">
-<aside class="sidebar">
+<button class="mobileMenuBtn iconBtn" id="menuToggle" aria-label="Toggle navigation menu" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()">☰</button>
+<div class="sidebarBackdrop" id="sidebarBackdrop" hidden onclick="toggleSidebar(false)" aria-hidden="true"></div>
+<aside class="sidebar" id="sidebar" aria-label="Primary navigation">
   <div class="logo"><span class="logoMark">O</span><span>OPTIMUS</span></div>
-  <button class="newChat" onclick="newChat()">＋ New Chat</button>
-  <nav>
-    <button class="nav active" data-page="home" onclick="page('home')">⌂ <span>Home</span></button>
-    <button class="nav" data-page="chat" onclick="page('chat')">◌ <span>Chat</span></button>
-    <button class="nav" data-page="projects" onclick="page('projects')">▣ <span>Projects</span></button>
-    <button class="nav" data-page="files" onclick="page('files')">□ <span>Files</span></button>
-    <button class="nav" data-page="images" onclick="page('images')">▤ <span>Images</span></button>
-    <button class="nav" data-page="memory" onclick="page('memory')">◇ <span>Memory</span></button>
-    <button class="nav" data-page="agents" onclick="page('agents')">⌁ <span>Agents</span></button>
-    <button class="nav" data-page="settings" onclick="page('settings')">⚙ <span>Settings</span></button>
+  <button class="newChat" type="button" onclick="newChat()">＋ New Chat</button>
+  <nav aria-label="Workspace pages">
+    <button class="nav active" type="button" data-page="home" onclick="page('home')">⌂ <span>Home</span></button>
+    <button class="nav" type="button" data-page="chat" onclick="page('chat')">◌ <span>Chat</span></button>
+    <button class="nav" type="button" data-page="projects" onclick="page('projects')">▣ <span>Projects</span></button>
+    <button class="nav" type="button" data-page="files" onclick="page('files')">□ <span>Files</span></button>
+    <button class="nav" type="button" data-page="images" onclick="page('images')">▤ <span>Images</span></button>
+    <button class="nav" type="button" data-page="memory" onclick="page('memory')">◇ <span>Memory</span></button>
+    <button class="nav" type="button" data-page="agents" onclick="page('agents')">⌁ <span>Agents</span></button>
+    <button class="nav" type="button" data-page="settings" onclick="page('settings')">⚙ <span>Settings</span></button>
   </nav>
   <div class="sideBottom"><span class="statusDot"></span> OPTIMUS online</div>
 </aside>
 <main>
-<header><div class="mobileBrand"><span class="logoMark">O</span> OPTIMUS</div><div class="modelPill" id="modelPill">● Gemini</div><button class="iconBtn" onclick="page('settings')">◉</button></header>
+<header><div class="mobileBrand"><span class="logoMark">O</span> OPTIMUS</div><div class="modelPill" id="modelPill">● Gemini</div><button class="iconBtn" type="button" aria-label="Open settings" onclick="page('settings')">◉</button></header>
 <div id="view"></div>
 </main>
 </div>

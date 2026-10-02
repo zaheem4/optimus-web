@@ -122,14 +122,45 @@ function weatherCodeToText(code) {
   const map = { 0: "clear sky", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 48: "depositing rime fog", 51: "light drizzle", 53: "moderate drizzle", 55: "dense drizzle", 61: "slight rain", 63: "moderate rain", 65: "heavy rain", 71: "slight snow", 73: "moderate snow", 75: "heavy snow", 80: "rain showers", 81: "moderate rain showers", 82: "violent rain showers", 95: "thunderstorm" };
   return map[code] || `weather code ${code}`;
 }
-function setNav(p) { document.querySelectorAll(".nav").forEach(x => x.classList.toggle("active", x.dataset.page === p)); }
-function page(p) { setNav(p); ({ home, chat, projects: projectsPage, files: filesPage, images: imagesPage, memory: memoryPage, agents, settings, research }[p] || home)(); }
+const MOBILE_NAV_BREAKPOINT = 920;
+function isMobileNav() { return window.matchMedia(`(max-width:${MOBILE_NAV_BREAKPOINT}px)`).matches; }
+function toggleSidebar(force) {
+  const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  const menuBtn = document.getElementById("menuToggle");
+  if (!sidebar || !backdrop || !menuBtn || !isMobileNav()) return;
+  const nextOpen = typeof force === "boolean" ? force : !sidebar.classList.contains("open");
+  sidebar.classList.toggle("open", nextOpen);
+  backdrop.hidden = !nextOpen;
+  menuBtn.setAttribute("aria-expanded", String(nextOpen));
+  document.body.classList.toggle("navOpen", nextOpen);
+}
+function closeSidebarOnDesktop() {
+  if (isMobileNav()) return;
+  document.getElementById("sidebar")?.classList.remove("open");
+  document.getElementById("sidebarBackdrop")?.setAttribute("hidden", "");
+  document.getElementById("menuToggle")?.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("navOpen");
+}
+function setNav(p) {
+  document.querySelectorAll(".nav").forEach(x => {
+    const active = x.dataset.page === p;
+    x.classList.toggle("active", active);
+    if (active) x.setAttribute("aria-current", "page");
+    else x.removeAttribute("aria-current");
+  });
+}
+function page(p) {
+  setNav(p);
+  if (isMobileNav()) toggleSidebar(false);
+  ({ home, chat, projects: projectsPage, files: filesPage, images: imagesPage, memory: memoryPage, agents, settings, research }[p] || home)();
+}
 function cancelActiveChatRequest() {
   if (activeChatController) activeChatController.abort();
   activeChatController = null;
   stopSpeaking();
 }
-function newChat() { cancelActiveChatRequest(); conversationId = null; pendingAttachmentIds = []; chat(); }
+function newChat() { cancelActiveChatRequest(); conversationId = null; pendingAttachmentIds = []; chat(); if (isMobileNav()) toggleSidebar(false); }
 function card(i, t, d, p) { return `<button class="card" style="text-align:left;color:inherit;cursor:pointer" onclick="${p === "research" ? "research()" : `page('${p}')`}"><div class="icon">${i}</div><h3>${t}</h3><p>${d}</p></button>`; }
 
 /* ---------- Gemini calls (direct from the browser) ---------- */
@@ -804,4 +835,6 @@ function resetData() {
 }
 
 document.getElementById("modelPill").textContent = "● " + state.model;
+window.addEventListener("resize", closeSidebarOnDesktop);
+window.addEventListener("keydown", e => { if (e.key === "Escape" && isMobileNav()) toggleSidebar(false); });
 page("home");
