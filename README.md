@@ -25,8 +25,13 @@ That's it — no server to run or pay for.
 
 - **Chat** with Gemini, using your browser-stored key.
 - **Voice input** — tap the mic, speak, and your words are transcribed by Gemini and dropped into the chat box for you to review before sending. Works the same way on Android, iPhone and desktop, since transcription happens via the Gemini API rather than each browser's own (inconsistent) speech engine.
+- **Voice output (optional)** — read assistant replies aloud with browser speech synthesis.
 - **Image generation** — describe an image and it's generated with Gemini's image model (`gemini-3.1-flash-image`), shown in a gallery, downloadable as PNG.
-- **File upload with in-browser text extraction** for TXT, Markdown, CSV, JSON, PDF (via pdf.js) and DOCX (via mammoth.js) — and you can **view and edit** the extracted text before OPTIMUS uses it as context.
+- **File upload with in-browser extraction** for TXT, Markdown, CSV, JSON, PDF (via pdf.js), DOCX (via mammoth.js), and image attachments (PNG/JPG/WEBP/GIF).
+- **Chat attachment workflow** — attach files directly in Chat, see file name/type/size and processing state, remove/clear attachments, and send only the selected chat attachments as context.
+- **Location/time/weather context** — one-tap browser location + Open-Meteo weather refresh so local time/weather questions can be answered with current context.
+- **Assistant export** — export any assistant answer as a downloadable **PDF** (via jsPDF) or **Word-compatible `.doc`** file.
+- **Answer customization controls** — persist provider/model base URL, custom instruction, tone, response length, and task mode in local storage.
 - **Memory, Projects, Agents plan, Research** (Gemini search grounding), same as before.
 - A layout that adapts to touch devices (Android/iPhone — bigger buttons, safe-area padding for notches/home indicators) versus a mouse/trackpad on desktop, using CSS `pointer: coarse/fine` media queries rather than guessing the device from its name.
 
@@ -35,8 +40,9 @@ That's it — no server to run or pay for.
 - No shared database — everything is per-browser (`localStorage`). Clearing
   browser data or switching devices loses your history. Use **Settings →
   Export data** to back it up as a `.json` file.
-- Your API key is sent to Google (`generativelanguage.googleapis.com`) for chat, image generation, and voice transcription, straight from your browser. It is **not** hidden from anyone using the same browser
-  profile — don't use this build on a shared/public computer.
+- Your API key is sent to Google (`generativelanguage.googleapis.com`) for chat, image generation, and voice transcription, straight from your browser. In this build it is kept in in-memory state by default (cleared on refresh/close unless you inject a runtime key).
+- Unsupported providers are rejected at runtime in this static build. Keep `provider=gemini` unless you add your own provider adapter.
+- Location/weather context uses browser geolocation (HTTPS required) and Open-Meteo public APIs.
 - PDF and DOCX text extraction happens in-browser (via pdf.js and
   mammoth.js, loaded from cdnjs on first use) instead of on a Python server.
 - Voice input records audio locally and sends it to Gemini once for transcription — it is not continuously streamed anywhere, and nothing is recorded until you tap the mic.
@@ -52,3 +58,22 @@ log, and multi-format file parsing) is still the better choice if you want
 a shared/multi-device deployment. GitHub Pages can't run it, but free tiers
 on Render, Fly.io, or Hugging Face Spaces can — see the main project's
 README for a one-click-ish path.
+
+## Optional runtime configuration (environment-style)
+
+Because this is a static site, browser runtime config is provided by a global object rather than real server env vars.
+
+Add this before `app.js` in `index.html` (or inject it via your host template):
+
+```html
+<script>
+  window.OPTIMUS_CONFIG = {
+    provider: "gemini",
+    apiBase: "https://generativelanguage.googleapis.com/v1beta/models",
+    model: "gemini-3.1-flash-lite"
+    // apiKey: "..." // optional: not recommended for public/shared devices
+  };
+</script>
+```
+
+`localStorage` values from Settings override this runtime object on the current device.
