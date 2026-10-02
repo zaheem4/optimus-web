@@ -270,6 +270,14 @@ header {
   margin-top: 10px;
 }
 
+.metaLine {
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: #a9b0ba;
+}
+
 .composer {
   max-width: 760px;
   margin: 28px auto 0;
@@ -326,8 +334,15 @@ header {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  max-width: 920px;
-  margin: 50px auto 0;
+  margin: 0;
+}
+
+.splitPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  max-width: 980px;
+  margin: 42px auto 0;
 }
 
 .card {
@@ -347,6 +362,36 @@ header {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.recentCard h3 {
+  margin-top: 0;
+}
+
+.recentCard p {
+  margin-bottom: 10px;
+}
+
+.recentItem {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--soft);
+  padding: 10px 11px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.recentItem small {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .icon {
@@ -629,6 +674,10 @@ a:focus-visible {
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .splitPanel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 920px) {
@@ -706,7 +755,6 @@ a:focus-visible {
 
   .grid {
     grid-template-columns: 1fr;
-    margin-top: 32px;
   }
 
   .chips {

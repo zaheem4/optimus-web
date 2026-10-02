@@ -91,6 +91,16 @@ function formatBytes(bytes) {
 function normalizeText(input) { return String(input || "").replace(/\r\n?/g, "\n").trim(); }
 function isoNow() { return new Date().toISOString(); }
 function isImageMime(mime = "") { return /^image\/(png|jpe?g|webp|gif)$/i.test(mime); }
+function minutesSince(iso) {
+  const parsed = Date.parse(iso || "");
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 60000));
+}
+function getCurrentDateContextText() {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return `CURRENT DATE/TIME: ${now.toISOString()} (UTC). User local time: ${now.toLocaleString()} (${tz}).`;
+}
 function getLengthInstruction(length) {
   return ({ short: "Prefer concise answers (about 2-5 short sentences unless steps are requested).", medium: "Keep answers moderately detailed.", long: "Provide detailed, step-by-step answers with caveats where needed." }[length] || "Prefer concise answers.");
 }
@@ -116,7 +126,9 @@ function getLocationContextText() {
   const loc = state.location;
   const tz = loc.timezone || "UTC";
   const localNow = new Date().toLocaleString(undefined, { timeZone: tz, hour12: false });
-  return `LOCATION CONTEXT (user approved): ${loc.label || `${loc.latitude}, ${loc.longitude}`}. Timezone: ${tz}. Current local time: ${localNow}. ${getWeatherSummary(loc)} Last refreshed: ${loc.updatedAt || "unknown"}.`;
+  const mins = minutesSince(loc.updatedAt);
+  const freshness = mins === null ? "unknown freshness" : mins > 60 ? `stale (${mins} minutes old, refresh recommended)` : `updated ${mins} minutes ago`;
+  return `LOCATION CONTEXT (user approved): ${loc.label || `${loc.latitude}, ${loc.longitude}`}. Timezone: ${tz}. Current local time there: ${localNow}. ${getWeatherSummary(loc)} Weather freshness: ${freshness}. Last refreshed: ${loc.updatedAt || "unknown"}.`;
 }
 function weatherCodeToText(code) {
   const map = { 0: "clear sky", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 48: "depositing rime fog", 51: "light drizzle", 53: "moderate drizzle", 55: "dense drizzle", 61: "slight rain", 63: "moderate rain", 65: "heavy rain", 71: "slight snow", 73: "moderate snow", 75: "heavy snow", 80: "rain showers", 81: "moderate rain showers", 82: "violent rain showers", 95: "thunderstorm" };
@@ -161,7 +173,12 @@ function cancelActiveChatRequest() {
   stopSpeaking();
 }
 function newChat() { cancelActiveChatRequest(); conversationId = null; pendingAttachmentIds = []; chat(); if (isMobileNav()) toggleSidebar(false); }
-function card(i, t, d, p) { return `<button class="card" style="text-align:left;color:inherit;cursor:pointer" onclick="${p === "research" ? "research()" : `page('${p}')`}"><div class="icon">${i}</div><h3>${t}</h3><p>${d}</p></button>`; }
+function openConversation(id) {
+  if (!conversations.find(c => c.id === id)) return;
+  conversationId = id;
+  chat();
+}
+function card(i, t, d, p) { return `<button type="button" class="card" style="text-align:left;color:inherit;cursor:pointer" onclick="${p === "research" ? "research()" : `page('${p}')`}"><div class="icon">${i}</div><h3>${t}</h3><p>${d}</p></button>`; }
 
 /* ---------- Gemini calls (direct from the browser) ---------- */
 async function geminiChat(messages, opts = {}) {
@@ -259,6 +276,7 @@ function buildContext(convo) {
   let ctx = SYSTEM;
   if (state.preferences.customInstruction) ctx += "\n\nUSER INSTRUCTION:\n" + state.preferences.customInstruction;
   ctx += `\n\nASSISTANT STYLE:\n${getToneInstruction(state.preferences.tone)}\n${getLengthInstruction(state.preferences.responseLength)}\n${getTaskInstruction(state.preferences.taskMode)}`;
+  ctx += `\n\n${getCurrentDateContextText()}`;
   ctx += `\n\n${getLocationContextText()}`;
   if (memories.length) ctx += "\n\nUSER MEMORY:\n" + memories.map(x => "- " + x.content).join("\n");
   const attachmentIds = convo?.attachmentIds || [];
@@ -269,7 +287,9 @@ function buildContext(convo) {
 
 /* ---------- Pages ---------- */
 function home() {
-  view.innerHTML = `<section class="hero"><h1>Hello, I'm <b>Optimus</b></h1><p>Your AI workspace for ideas, code, research and creation.</p><div class="composer"><textarea id="prompt" rows="1" placeholder="Ask Optimus anything..."></textarea><button class="sendBtn" onclick="sendHome()">↑</button></div><div class="chips"><button class="chip" onclick="quick('Research')">⌕ Research</button><button class="chip" onclick="quick('Create')">✧ Create</button><button class="chip" onclick="quick('Code')">&lt;/&gt; Code</button><button class="chip" onclick="quick('Analyze')">▥ Analyze</button><button class="chip" onclick="page('agents')">＋ More</button></div></section><section class="grid">${card("⌘", "Write Code", "Build, debug and improve your code.", "chat")}${card("◇", "Turn Ideas Into Plans", "Get structured steps for your goals.", "agents")}${card("⌕", "Deep Research", "Explore topics with live search grounding.", "research")}${card("▧", "Generate Images", "Create images with Gemini, right in your browser.", "images")}</section>`;
+  const today = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date());
+  const recent = conversations.slice(0, 4).map(c => `<button type="button" class="recentItem" onclick="openConversation(${c.id})"><span>${esc(c.title || "Untitled chat")}</span><small>${new Date(c.updated_at || Date.now()).toLocaleDateString()}</small></button>`).join("");
+  view.innerHTML = `<section class="hero"><p class="metaLine">${esc(today)}</p><h1>Welcome to <b>Optimus</b></h1><p>Your minimal AI workspace for chat, research, and creation.</p><div class="composer"><textarea id="prompt" rows="1" placeholder="Ask Optimus anything..."></textarea><button type="button" class="sendBtn" aria-label="Send prompt" onclick="sendHome()">↑</button></div><div class="chips"><button type="button" class="chip" onclick="quick('Research')">⌕ Research</button><button type="button" class="chip" onclick="quick('Create')">✧ Create</button><button type="button" class="chip" onclick="quick('Code')">&lt;/&gt; Code</button><button type="button" class="chip" onclick="quick('Analyze')">▥ Analyze</button><button type="button" class="chip" onclick="page('agents')">＋ More</button></div></section><section class="splitPanel"><div class="grid">${card("⌘", "Write Code", "Build, debug and improve your code.", "chat")}${card("◇", "Create Plans", "Turn ideas into structured execution steps.", "agents")}${card("⌕", "Deep Research", "Explore topics with grounded search support.", "research")}${card("▧", "Generate Images", "Create images with Gemini in-browser.", "images")}</div><aside class="card recentCard"><h3>Recent chats</h3><p>Resume your latest workspace threads.</p>${recent || `<div class="drop">No recent chats yet.</div>`}</aside></section>`;
   document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendHome(); } });
 }
 function quick(t) { document.getElementById("prompt").value = t + " — "; document.getElementById("prompt").focus(); }
@@ -536,7 +556,9 @@ function renderChatLocationStatus() {
   if (!el) return;
   if (!state.location) { el.textContent = "Location/weather context: not set"; return; }
   const loc = state.location;
-  el.textContent = `${loc.label || `${loc.latitude}, ${loc.longitude}`} · ${getWeatherSummary(loc)}`;
+  const mins = minutesSince(loc.updatedAt);
+  const staleText = mins === null ? "updated: unknown" : mins > 60 ? `updated ${mins}m ago (refresh suggested)` : `updated ${mins}m ago`;
+  el.textContent = `${loc.label || `${loc.latitude}, ${loc.longitude}`} · ${getWeatherSummary(loc)} · ${staleText}`;
 }
 async function useMyLocation() {
   const statusEl = document.getElementById("chatLocationStatus");
