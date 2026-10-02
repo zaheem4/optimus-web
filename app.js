@@ -10,6 +10,7 @@ const view = document.getElementById("view"), toast = document.getElementById("t
 const RUNTIME_CONFIG = window.OPTIMUS_CONFIG || {};
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // current stable, low-cost Gemini model (Sept 2026)
+const CHAT_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
 const IMAGE_MODEL = "gemini-3.1-flash-image";   // current Gemini image ("Nano Banana") model
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_FILE_TEXT_CHARS = 50000;
@@ -116,6 +117,41 @@ function getOutputTokensByLength(length) {
 function providerGuard() {
   if (state.provider !== "gemini") throw new Error(`Provider "${state.provider}" is not supported in this static build. Set provider to "gemini".`);
 }
+function shouldRetryModel(error) {
+  const status = Number(error?.status || 0);
+  const msg = String(error?.message || "").toLowerCase();
+  if (status === 403 || status === 404 || status === 429) return true;
+  return msg.includes("denied access") || msg.includes("permission") || msg.includes("not found") || msg.includes("unsupported") || msg.includes("model");
+}
+function toUserFacingChatError(error) {
+  const status = Number(error?.status || 0);
+  const msg = String(error?.message || "");
+  const low = msg.toLowerCase();
+  if (status === 403 || low.includes("denied access") || low.includes("permission")) {
+    return "Access denied for this API key/project. Open Settings and use a permitted Gemini API key or model.";
+  }
+  if (status === 404 || low.includes("not found")) {
+    return "The selected model was not found for this API key/project. Open Settings and try another model.";
+  }
+  return msg || "Chat request failed.";
+}
+async function geminiGenerateContent(model, payload, signal) {
+  const r = await fetch(`${state.apiBase}/${model}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  let data;
+  try { data = await r.json(); } catch { data = null; }
+  if (!r.ok) {
+    const e = new Error(data?.error?.message || `Gemini API error ${r.status}`);
+    e.status = r.status;
+    e.payload = data;
+    throw e;
+  }
+  return data;
+}
 function getWeatherSummary(location) {
   if (!location?.weather) return "Weather unavailable.";
   const w = location.weather;
@@ -193,24 +229,33 @@ async function geminiChat(messages, opts = {}) {
   }
   const payload = { contents, generationConfig: { temperature, maxOutputTokens: getOutputTokensByLength(state.preferences.responseLength) } };
   if (system) payload.systemInstruction = { parts: [{ text: system }] };
-  const r = await fetch(`${state.apiBase}/${state.model}:generateContent`, {
-    method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: opts.signal,
-  });
-  let data;
-  try { data = await r.json(); } catch { data = null; }
-  if (!r.ok) throw new Error(data?.error?.message || `Gemini API error ${r.status}`);
-  const candidate = data?.candidates?.[0];
-  if (!candidate) throw new Error("The AI provider returned no answer candidate.");
-  if (candidate.finishReason && candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") {
-    throw new Error(`Response incomplete (${candidate.finishReason}). Please try again.`);
+  const candidateModels = [state.model, ...CHAT_MODEL_FALLBACKS.filter(m => m !== state.model)];
+  let lastError = null;
+  for (const model of candidateModels) {
+    try {
+      const data = await geminiGenerateContent(model, payload, opts.signal);
+      const candidate = data?.candidates?.[0];
+      if (!candidate) throw new Error("The AI provider returned no answer candidate.");
+      if (candidate.finishReason && candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") {
+        throw new Error(`Response incomplete (${candidate.finishReason}). Please try again.`);
+      }
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const answer = normalizeText(parts.map(p => p.text || "").join(""));
+      if (!answer) throw new Error("The AI provider returned an empty response.");
+      if (model !== state.model) {
+        state.model = model;
+        localStorage.setItem("optimus_model", model);
+        document.getElementById("modelPill").textContent = "● " + model;
+        notify(`Switched chat model to ${model}`);
+      }
+      return answer;
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      lastError = e;
+      if (!shouldRetryModel(e) || model === candidateModels[candidateModels.length - 1]) break;
+    }
   }
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const answer = normalizeText(parts.map(p => p.text || "").join(""));
-  if (!answer) throw new Error("The AI provider returned an empty response.");
-  return answer;
+  throw new Error(toUserFacingChatError(lastError));
 }
 async function geminiSearch(query) {
   providerGuard();
