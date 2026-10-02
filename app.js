@@ -10,6 +10,7 @@ const view = document.getElementById("view"), toast = document.getElementById("t
 const RUNTIME_CONFIG = window.OPTIMUS_CONFIG || {};
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // current stable, low-cost Gemini model (Sept 2026)
+const CHAT_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
 const IMAGE_MODEL = "gemini-3.1-flash-image";   // current Gemini image ("Nano Banana") model
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_FILE_TEXT_CHARS = 50000;
@@ -91,6 +92,16 @@ function formatBytes(bytes) {
 function normalizeText(input) { return String(input || "").replace(/\r\n?/g, "\n").trim(); }
 function isoNow() { return new Date().toISOString(); }
 function isImageMime(mime = "") { return /^image\/(png|jpe?g|webp|gif)$/i.test(mime); }
+function minutesSince(iso) {
+  const parsed = Date.parse(iso || "");
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 60000));
+}
+function getCurrentDateContextText() {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return `CURRENT DATE/TIME: ${now.toISOString()} (UTC). User local time: ${now.toLocaleString()} (${tz}).`;
+}
 function getLengthInstruction(length) {
   return ({ short: "Prefer concise answers (about 2-5 short sentences unless steps are requested).", medium: "Keep answers moderately detailed.", long: "Provide detailed, step-by-step answers with caveats where needed." }[length] || "Prefer concise answers.");
 }
@@ -106,6 +117,41 @@ function getOutputTokensByLength(length) {
 function providerGuard() {
   if (state.provider !== "gemini") throw new Error(`Provider "${state.provider}" is not supported in this static build. Set provider to "gemini".`);
 }
+function shouldRetryModel(error) {
+  const status = Number(error?.status || 0);
+  const msg = String(error?.message || "").toLowerCase();
+  if (status === 403 || status === 404 || status === 429) return true;
+  return msg.includes("denied access") || msg.includes("permission") || msg.includes("not found") || msg.includes("unsupported") || msg.includes("model");
+}
+function toUserFacingChatError(error) {
+  const status = Number(error?.status || 0);
+  const msg = String(error?.message || "");
+  const low = msg.toLowerCase();
+  if (status === 403 || low.includes("denied access") || low.includes("permission")) {
+    return "Access denied for this API key/project. Open Settings and use a permitted Gemini API key or model.";
+  }
+  if (status === 404 || low.includes("not found")) {
+    return "The selected model was not found for this API key/project. Open Settings and try another model.";
+  }
+  return msg || "Chat request failed.";
+}
+async function geminiGenerateContent(model, payload, signal) {
+  const r = await fetch(`${state.apiBase}/${model}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  let data;
+  try { data = await r.json(); } catch { data = null; }
+  if (!r.ok) {
+    const e = new Error(data?.error?.message || `Gemini API error ${r.status}`);
+    e.status = r.status;
+    e.payload = data;
+    throw e;
+  }
+  return data;
+}
 function getWeatherSummary(location) {
   if (!location?.weather) return "Weather unavailable.";
   const w = location.weather;
@@ -116,21 +162,59 @@ function getLocationContextText() {
   const loc = state.location;
   const tz = loc.timezone || "UTC";
   const localNow = new Date().toLocaleString(undefined, { timeZone: tz, hour12: false });
-  return `LOCATION CONTEXT (user approved): ${loc.label || `${loc.latitude}, ${loc.longitude}`}. Timezone: ${tz}. Current local time: ${localNow}. ${getWeatherSummary(loc)} Last refreshed: ${loc.updatedAt || "unknown"}.`;
+  const mins = minutesSince(loc.updatedAt);
+  const freshness = mins === null ? "unknown freshness" : mins > 60 ? `stale (${mins} minutes old, refresh recommended)` : `updated ${mins} minutes ago`;
+  return `LOCATION CONTEXT (user approved): ${loc.label || `${loc.latitude}, ${loc.longitude}`}. Timezone: ${tz}. Current local time there: ${localNow}. ${getWeatherSummary(loc)} Weather freshness: ${freshness}. Last refreshed: ${loc.updatedAt || "unknown"}.`;
 }
 function weatherCodeToText(code) {
   const map = { 0: "clear sky", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 48: "depositing rime fog", 51: "light drizzle", 53: "moderate drizzle", 55: "dense drizzle", 61: "slight rain", 63: "moderate rain", 65: "heavy rain", 71: "slight snow", 73: "moderate snow", 75: "heavy snow", 80: "rain showers", 81: "moderate rain showers", 82: "violent rain showers", 95: "thunderstorm" };
   return map[code] || `weather code ${code}`;
 }
-function setNav(p) { document.querySelectorAll(".nav").forEach(x => x.classList.toggle("active", x.dataset.page === p)); }
-function page(p) { setNav(p); ({ home, chat, projects: projectsPage, files: filesPage, images: imagesPage, memory: memoryPage, agents, settings, research }[p] || home)(); }
+const MOBILE_NAV_BREAKPOINT = 920;
+function isMobileNav() { return window.matchMedia(`(max-width:${MOBILE_NAV_BREAKPOINT}px)`).matches; }
+function toggleSidebar(force) {
+  const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  const menuBtn = document.getElementById("menuToggle");
+  if (!sidebar || !backdrop || !menuBtn || !isMobileNav()) return;
+  const nextOpen = typeof force === "boolean" ? force : !sidebar.classList.contains("open");
+  sidebar.classList.toggle("open", nextOpen);
+  backdrop.hidden = !nextOpen;
+  menuBtn.setAttribute("aria-expanded", String(nextOpen));
+  document.body.classList.toggle("navOpen", nextOpen);
+}
+function closeSidebarOnDesktop() {
+  if (isMobileNav()) return;
+  document.getElementById("sidebar")?.classList.remove("open");
+  document.getElementById("sidebarBackdrop")?.setAttribute("hidden", "");
+  document.getElementById("menuToggle")?.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("navOpen");
+}
+function setNav(p) {
+  document.querySelectorAll(".nav").forEach(x => {
+    const active = x.dataset.page === p;
+    x.classList.toggle("active", active);
+    if (active) x.setAttribute("aria-current", "page");
+    else x.removeAttribute("aria-current");
+  });
+}
+function page(p) {
+  setNav(p);
+  if (isMobileNav()) toggleSidebar(false);
+  ({ home, chat, projects: projectsPage, files: filesPage, images: imagesPage, memory: memoryPage, agents, settings, research }[p] || home)();
+}
 function cancelActiveChatRequest() {
   if (activeChatController) activeChatController.abort();
   activeChatController = null;
   stopSpeaking();
 }
-function newChat() { cancelActiveChatRequest(); conversationId = null; pendingAttachmentIds = []; chat(); }
-function card(i, t, d, p) { return `<button class="card" style="text-align:left;color:inherit;cursor:pointer" onclick="${p === "research" ? "research()" : `page('${p}')`}"><div class="icon">${i}</div><h3>${t}</h3><p>${d}</p></button>`; }
+function newChat() { cancelActiveChatRequest(); conversationId = null; pendingAttachmentIds = []; chat(); if (isMobileNav()) toggleSidebar(false); }
+function openConversation(id) {
+  if (!conversations.find(c => c.id === id)) return;
+  conversationId = id;
+  chat();
+}
+function card(i, t, d, p) { return `<button type="button" class="card" style="text-align:left;color:inherit;cursor:pointer" onclick="${p === "research" ? "research()" : `page('${p}')`}"><div class="icon">${i}</div><h3>${t}</h3><p>${d}</p></button>`; }
 
 /* ---------- Gemini calls (direct from the browser) ---------- */
 async function geminiChat(messages, opts = {}) {
@@ -145,24 +229,33 @@ async function geminiChat(messages, opts = {}) {
   }
   const payload = { contents, generationConfig: { temperature, maxOutputTokens: getOutputTokensByLength(state.preferences.responseLength) } };
   if (system) payload.systemInstruction = { parts: [{ text: system }] };
-  const r = await fetch(`${state.apiBase}/${state.model}:generateContent`, {
-    method: "POST",
-    headers: { "x-goog-api-key": state.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: opts.signal,
-  });
-  let data;
-  try { data = await r.json(); } catch { data = null; }
-  if (!r.ok) throw new Error(data?.error?.message || `Gemini API error ${r.status}`);
-  const candidate = data?.candidates?.[0];
-  if (!candidate) throw new Error("The AI provider returned no answer candidate.");
-  if (candidate.finishReason && candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") {
-    throw new Error(`Response incomplete (${candidate.finishReason}). Please try again.`);
+  const candidateModels = [state.model, ...CHAT_MODEL_FALLBACKS.filter(m => m !== state.model)];
+  let lastError = null;
+  for (const model of candidateModels) {
+    try {
+      const data = await geminiGenerateContent(model, payload, opts.signal);
+      const candidate = data?.candidates?.[0];
+      if (!candidate) throw new Error("The AI provider returned no answer candidate.");
+      if (candidate.finishReason && candidate.finishReason !== "STOP" && candidate.finishReason !== "MAX_TOKENS") {
+        throw new Error(`Response incomplete (${candidate.finishReason}). Please try again.`);
+      }
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const answer = normalizeText(parts.map(p => p.text || "").join(""));
+      if (!answer) throw new Error("The AI provider returned an empty response.");
+      if (model !== state.model) {
+        state.model = model;
+        localStorage.setItem("optimus_model", model);
+        document.getElementById("modelPill").textContent = "● " + model;
+        notify(`Switched chat model to ${model}`);
+      }
+      return answer;
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      lastError = e;
+      if (!shouldRetryModel(e) || model === candidateModels[candidateModels.length - 1]) break;
+    }
   }
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const answer = normalizeText(parts.map(p => p.text || "").join(""));
-  if (!answer) throw new Error("The AI provider returned an empty response.");
-  return answer;
+  throw new Error(toUserFacingChatError(lastError));
 }
 async function geminiSearch(query) {
   providerGuard();
@@ -228,6 +321,7 @@ function buildContext(convo) {
   let ctx = SYSTEM;
   if (state.preferences.customInstruction) ctx += "\n\nUSER INSTRUCTION:\n" + state.preferences.customInstruction;
   ctx += `\n\nASSISTANT STYLE:\n${getToneInstruction(state.preferences.tone)}\n${getLengthInstruction(state.preferences.responseLength)}\n${getTaskInstruction(state.preferences.taskMode)}`;
+  ctx += `\n\n${getCurrentDateContextText()}`;
   ctx += `\n\n${getLocationContextText()}`;
   if (memories.length) ctx += "\n\nUSER MEMORY:\n" + memories.map(x => "- " + x.content).join("\n");
   const attachmentIds = convo?.attachmentIds || [];
@@ -238,7 +332,9 @@ function buildContext(convo) {
 
 /* ---------- Pages ---------- */
 function home() {
-  view.innerHTML = `<section class="hero"><h1>Hello, I'm <b>Optimus</b></h1><p>Your AI workspace for ideas, code, research and creation.</p><div class="composer"><textarea id="prompt" rows="1" placeholder="Ask Optimus anything..."></textarea><button class="sendBtn" onclick="sendHome()">↑</button></div><div class="chips"><button class="chip" onclick="quick('Research')">⌕ Research</button><button class="chip" onclick="quick('Create')">✧ Create</button><button class="chip" onclick="quick('Code')">&lt;/&gt; Code</button><button class="chip" onclick="quick('Analyze')">▥ Analyze</button><button class="chip" onclick="page('agents')">＋ More</button></div></section><section class="grid">${card("⌘", "Write Code", "Build, debug and improve your code.", "chat")}${card("◇", "Turn Ideas Into Plans", "Get structured steps for your goals.", "agents")}${card("⌕", "Deep Research", "Explore topics with live search grounding.", "research")}${card("▧", "Generate Images", "Create images with Gemini, right in your browser.", "images")}</section>`;
+  const today = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date());
+  const recent = conversations.slice(0, 4).map(c => `<button type="button" class="recentItem" onclick="openConversation(${c.id})"><span>${esc(c.title || "Untitled chat")}</span><small>${new Date(c.updated_at || Date.now()).toLocaleDateString()}</small></button>`).join("");
+  view.innerHTML = `<section class="hero"><p class="metaLine">${esc(today)}</p><h1>Welcome to <b>Optimus</b></h1><p>Your minimal AI workspace for chat, research, and creation.</p><div class="composer"><textarea id="prompt" rows="1" placeholder="Ask Optimus anything..."></textarea><button type="button" class="sendBtn" aria-label="Send prompt" onclick="sendHome()">↑</button></div><div class="chips"><button type="button" class="chip" onclick="quick('Research')">⌕ Research</button><button type="button" class="chip" onclick="quick('Create')">✧ Create</button><button type="button" class="chip" onclick="quick('Code')">&lt;/&gt; Code</button><button type="button" class="chip" onclick="quick('Analyze')">▥ Analyze</button><button type="button" class="chip" onclick="page('agents')">＋ More</button></div></section><section class="splitPanel"><div class="grid">${card("⌘", "Write Code", "Build, debug and improve your code.", "chat")}${card("◇", "Create Plans", "Turn ideas into structured execution steps.", "agents")}${card("⌕", "Deep Research", "Explore topics with grounded search support.", "research")}${card("▧", "Generate Images", "Create images with Gemini in-browser.", "images")}</div><aside class="card recentCard"><h3>Recent chats</h3><p>Resume your latest workspace threads.</p>${recent || `<div class="drop">No recent chats yet.</div>`}</aside></section>`;
   document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendHome(); } });
 }
 function quick(t) { document.getElementById("prompt").value = t + " — "; document.getElementById("prompt").focus(); }
@@ -505,7 +601,9 @@ function renderChatLocationStatus() {
   if (!el) return;
   if (!state.location) { el.textContent = "Location/weather context: not set"; return; }
   const loc = state.location;
-  el.textContent = `${loc.label || `${loc.latitude}, ${loc.longitude}`} · ${getWeatherSummary(loc)}`;
+  const mins = minutesSince(loc.updatedAt);
+  const staleText = mins === null ? "updated: unknown" : mins > 60 ? `updated ${mins}m ago (refresh suggested)` : `updated ${mins}m ago`;
+  el.textContent = `${loc.label || `${loc.latitude}, ${loc.longitude}`} · ${getWeatherSummary(loc)} · ${staleText}`;
 }
 async function useMyLocation() {
   const statusEl = document.getElementById("chatLocationStatus");
@@ -804,4 +902,6 @@ function resetData() {
 }
 
 document.getElementById("modelPill").textContent = "● " + state.model;
+window.addEventListener("resize", closeSidebarOnDesktop);
+window.addEventListener("keydown", e => { if (e.key === "Escape" && isMobileNav()) toggleSidebar(false); });
 page("home");
